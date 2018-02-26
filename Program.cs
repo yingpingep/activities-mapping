@@ -50,6 +50,7 @@ namespace SplitToJson
             }
             #endregion
             
+            /* 
             #region Create activity           
             sr = new StreamReader(rootPath + fileNames[1]); 
             line = sr.ReadLine();
@@ -58,6 +59,7 @@ namespace SplitToJson
                 string[] acs = line.Split(",");
             }
             #endregion
+            */
         }
     }
 }
