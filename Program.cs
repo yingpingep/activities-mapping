@@ -1,144 +1,176 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 using SplitToJson.Model;
 
 namespace SplitToJson
 {
-    enum InputFomatMode
+    enum PairMode
     {
-        team_activity,
-        team_prepare
+        Team,
+        Parson
+    }
+
+    enum InpuMode
+    {
+        Execute,
+        Prepare
     }
 
     class Program
     {
         static void Main(string[] args)
         {
-            string rootPath = @"D:\Share\";
-            string[] fileNames = { "team.txt", "team_activity.txt", "team_prepare.txt", "mapping.txt" };            
-            List<Team> teams = new List<Team>();
-            List<User> users = new List<User>();
-            List<Activity> activities = new List<Activity>();
-
-            foreach (var item in fileNames)
-            {
-                if (!File.Exists(rootPath + item))
-                {
-                    Console.WriteLine("Cannot find file at {0}", rootPath + item);
-                    return;
-                }
-            }
-            StreamReader sr;
-
-            #region Create team       
-            sr = new StreamReader(rootPath + fileNames[0]);                 
-            string[] lines = sr.ReadToEnd().Split('\n');
-            foreach (var line in lines)
-            {
-                string[] info = line.Split(',');
-
-                Team team = new Team()
-                {
-                    Name = info[0]
-                };
-
-                List<string> ms = new List<string>();
-                for (int i = 1; i < info.Length; i++)
-                {
-                    ms.Add(info[i]);
-                }
-
-                teams.Add(team);
-            }
-            #endregion
+            string rootPath = @"D:\Share\";                  
+            // string[] fileNames = { "team.txt", "mapping.txt", "team_activity.txt", "team_prepare.txt" };                        
+            string[] fileNames = { "fake_team.txt", "fake_mapping.txt", "fake_team_activity.txt", "fake_team_prepare.txt" };         
             
-            #region Create activity           
-            sr = new StreamReader(rootPath + fileNames[1]); 
-            lines = sr.ReadToEnd().Split('\n');            
-            activities.AddRange(ActiivityHelper(lines, InputFomatMode.team_activity, teams));
+            Dictionary<string, string> teamPairs = PairHelper(ReadFileAllLine(rootPath + fileNames[0]), PairMode.Team);
+            Dictionary<string, string> parsonPairs = PairHelper(ReadFileAllLine(rootPath + fileNames[1]), PairMode.Parson);            
 
-            sr = new StreamReader(rootPath + fileNames[2]);
-            lines = sr.ReadToEnd().Split('\n');
-            activities.AddRange(ActiivityHelper(lines, InputFomatMode.team_prepare, teams));
-            #endregion            
+            string[] lines = ReadFileAllLine(rootPath + fileNames[2]);            
+            List<Activity> activities = new List<Activity>();
+            activities.AddRange(CreateEvent(lines, teamPairs, parsonPairs, InpuMode.Execute));
 
-            #region Mapping to user
-            sr = new StreamReader(rootPath + fileNames[3]);
-            lines = sr.ReadToEnd().Split('\n');
+            lines = ReadFileAllLine(rootPath + fileNames[3]);            
+            activities.AddRange(CreateEvent(lines, teamPairs, parsonPairs, InpuMode.Prepare));
+
+            string jsonString = JsonConvert.SerializeObject(activities);
+            HttpClient hc = new HttpClient();
+            var respone = hc.PostAsync("https://prod-30.eastasia.logic.azure.com:443/workflows/ec859b609596444487af6c41096f4aa3/triggers/manual/paths/invoke?api-version=2016-10-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=FVo6BA4v5qY418qaqedwvoCUyfl94WGQwQ0bnqejjpg", new StringContent(jsonString, Encoding.UTF8, "application/json"));
+            Console.WriteLine(jsonString);
+            Console.WriteLine(respone.Result.StatusCode);           
+        }   
+
+        static string[] ReadFileAllLine(string path)
+        {
+            StreamReader sr = new StreamReader(path);
+            return sr.ReadToEnd().Split('\n');                        
+        }
+        static Dictionary<string, string> PairHelper(string[] lines, PairMode mode)
+        {
+            Dictionary<string, string> result = new Dictionary<string, string>();
+            char splitWord;
+            if (mode == PairMode.Parson)
+            {
+                splitWord = ',';
+            }
+            else
+            {
+                splitWord = ':';
+            }
+
             foreach (var line in lines)
             {
-                string[] info = line.Split(',');
-                User user = new User()
-                {
-                    Name = info[0],
-                    Mail = info[1]
-                };
-                var acts = from activity in activities
-                           where activity.OwnerName.Contains(user.Name)
-                           select activity;
-                user.Activities = acts.ToArray();
-                users.Add(user);
+                var pair = line.Split(splitWord);
+                result.Add(pair[0], pair[1]);
             }
-            #endregion
 
-            Console.WriteLine(users[0].Name);
-        }
-        
-        static string[] DateHelper(string d)
-        {            
-            string[] date = d.Split('/');
-            string entity = string.Format("2018-{0}-{1}", date[0], date[1]);            
-            return new string[] { entity + "T10:00:00", entity + "T18:00:00" };
-        }
-        
-        static IEnumerable<Activity> ActiivityHelper(string[] data, InputFomatMode mode, IEnumerable<Team> teams)
+            return result;
+        }   
+
+        static string[] DateHelper(string date)
         {
-            List<Activity> acts = new List<Activity>();
-            foreach (var item in data)
-            {
-                string[] acs = item.Split(',');
-                string[] date = DateHelper(acs[0]);            
-                string title = acs[1];                
-                string teamName = acs[3];
-                var teamMembers = (from t in teams
-                                 where t.Name.Equals(teamName)
-                                 select t.Members).Single();
-                
-                foreach (var owner in teamMembers)
+            var item = date.Split('/');
+            string result = $"2018-{item[0]}-{item[1]}";
+            return new string[] { result + "T10:00:00", result + "T18:00:00" };
+        }
+
+        static string GetMailListFromTeam(string input, Dictionary<string, string> people)
+        {            
+            string[] members = input.Split(',');
+            string result = "";
+            foreach (var item in members)
+            {                
+                string parson;
+                if (people.TryGetValue(item, out parson))
                 {
-                    Activity activity = new Activity()
-                    {
-                        StartDate = date[0],
-                        EndDate = date[1],                        
-                        Title = title,
-                        OwnerName = owner
-                    };
-
-                    switch (mode)
-                    {
-                        case InputFomatMode.team_activity:
-                            // for location.
-                            activity.Location = acs[2];
-                            activity.Description = "";
-                            break;
-                        case InputFomatMode.team_prepare:
-                            // for description.
-                            activity.Location = "";
-                            activity.Description = acs[2];
-                            break;                            
-                        default:
-                            break;
-                    }
-
-                    acts.Add(activity);
-                }                    
+                    result += parson + ";";
+                }
+                else
+                {
+                    Console.WriteLine("Cannot find parson name {0}", item);
+                }
             }
 
-            return acts;
+            return result;
+        }
+        static IEnumerable<Activity> CreateEvent(string[] lines, Dictionary<string, string> teams, Dictionary<string, string> people, InpuMode mode)
+        {
+            List<Activity> result = new List<Activity>();
+            foreach (var item in lines)
+            {
+                string[] act = item.Split(',');
+                string[] date = DateHelper(act[0]);
+                Activity activity = new Activity()
+                {
+                    StartDate = date[0],
+                    EndDate = date[1],
+                    Title = act[1],
+                    Location = "",
+                    Description = "",
+                    Owners = ""
+                };
+
+                if (mode == InpuMode.Execute)
+                {
+                    activity.Location = act[2];
+                }
+                else
+                {
+                    activity.Description = act[2];
+                }
+
+                string members;
+                if (teams.TryGetValue(act[3], out members))
+                {
+                    // go get mail list.
+                    activity.Owners = GetMailListFromTeam(members, people);
+                }
+                else
+                {
+                    // get by parson.                    
+                    string[] temp = act[3].Split('、');
+                    string parson;
+                    if (temp.Count() == 0)
+                    {                   
+                        if (people.TryGetValue(temp[0], out parson))
+                        {
+                            activity.Owners = parson;
+                        }                   
+                        else
+                        {
+                            Console.WriteLine("Cannot find parson name {0}", item);
+                        }          
+                    }
+                    else
+                    {
+                        string tempResult = "";
+                        foreach (var tempItem in temp)
+                        {
+                            if (people.TryGetValue(tempItem, out parson))
+                            {
+                                tempResult += parson + ";";
+                            }
+                            else
+                            {
+                                Console.WriteLine("Cannot find parson name {0}", item);
+                            }
+                        }
+                        activity.Owners = tempResult;
+                    }
+                }
+
+                result.Add(activity);
+            }
+
+            return result;
         }
     }
 }
