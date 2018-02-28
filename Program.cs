@@ -28,8 +28,8 @@ namespace SplitToJson
         static void Main(string[] args)
         {
             string rootPath = @"D:\Share\";                  
-            // string[] fileNames = { "team.txt", "mapping.txt", "team_activity.txt", "team_prepare.txt" };                        
-            string[] fileNames = { "fake_team.txt", "fake_mapping.txt", "fake_team_activity.txt", "fake_team_prepare.txt" };         
+            string[] fileNames = { "team.txt", "mapping.txt", "team_activity.txt", "team_prepare.txt" };                        
+            // string[] fileNames = { "fake_team.txt", "fake_mapping.txt", "fake_team_activity.txt", "fake_team_prepare.txt" };         
             
             Dictionary<string, string> teamPairs = PairHelper(ReadFileAllLine(rootPath + fileNames[0]), PairMode.Team);
             Dictionary<string, string> parsonPairs = PairHelper(ReadFileAllLine(rootPath + fileNames[1]), PairMode.Parson);            
